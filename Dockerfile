@@ -1,4 +1,7 @@
-FROM ubuntu:latest
-LABEL authors="klimp"
+FROM eclipse-temurin:17-jre-alpine
 
-ENTRYPOINT ["top", "-b"]
+EXPOSE 5050
+
+ADD target/netology-cloud-storage-0.0.1-SNAPSHOT.jar diploma.jar
+
+ENTRYPOINT ["java", "-jar", "diploma.jar"]
