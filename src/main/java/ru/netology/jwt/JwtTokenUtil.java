@@ -1,6 +1,7 @@
 package ru.netology.jwt;
 
 import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.SignatureAlgorithm;
 import org.springframework.beans.factory.annotation.Value;
@@ -52,16 +53,25 @@ public class JwtTokenUtil implements Serializable {
     }
 
     private String doGenerateToken(Map<String, Object> claims, String subject) {
+        Date now = new Date();
+
         return Jwts.builder()
                 .setClaims(claims)
                 .setSubject(subject)
-                .setIssuedAt(new Date(System.currentTimeMillis()))
-                .setExpiration(new Date(System.currentTimeMillis() + expiration * 1000))
-                .signWith(SignatureAlgorithm.HS512, secret).compact();
+                .setIssuedAt(now)
+                .setExpiration(new Date(now.getTime() + expiration * 1000))
+                .signWith(SignatureAlgorithm.HS512, secret)
+                .compact();
     }
 
-    public Boolean validateToken(String token, UserDetails userDetails) {
-        final String username = getUsernameFromToken(token);
-        return (username.equals(userDetails.getUsername()) && !isTokenExpired(token));
+    public boolean validateToken(String token, UserDetails userDetails) {
+        try {
+            final String username = getUsernameFromToken(token);
+
+            return username.equals(userDetails.getUsername())
+                    && !isTokenExpired(token);
+        } catch (JwtException | IllegalArgumentException e) {
+            return false;
+        }
     }
 }

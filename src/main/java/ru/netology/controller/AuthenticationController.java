@@ -11,6 +11,8 @@ import ru.netology.dto.request.AuthenticationRQ;
 import ru.netology.dto.response.AuthenticationRS;
 import ru.netology.service.AuthenticationService;
 
+import javax.validation.Valid;
+
 @RestController
 @AllArgsConstructor
 public class AuthenticationController {
@@ -18,7 +20,7 @@ public class AuthenticationController {
     private AuthenticationService authenticationService;
 
     @PostMapping("/login")
-    public AuthenticationRS login(@RequestBody AuthenticationRQ authenticationRQ) {
+    public AuthenticationRS login(@Valid @RequestBody AuthenticationRQ authenticationRQ) {
         return authenticationService.login(authenticationRQ);
     }
 

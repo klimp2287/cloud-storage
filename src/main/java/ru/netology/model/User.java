@@ -25,7 +25,7 @@ public class User implements UserDetails, Serializable {
     @Column(nullable = false)
     private String password;
 
-    @OneToMany(cascade = CascadeType.ALL)
+    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL)
     private List<StorageFile> userFiles;
 
     @Override

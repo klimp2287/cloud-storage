@@ -10,13 +10,23 @@ import java.time.LocalDateTime;
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
-
 @Entity
-@Table(name = "files")
+@Table(
+        name = "files",
+        uniqueConstraints = {
+                @UniqueConstraint(
+                        name = "uk_files_user_filename",
+                        columnNames = {"user_username", "filename"}
+                )
+        }
+)
 public class StorageFile {
 
     @Id
-    @Column(nullable = false, unique = true)
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(nullable = false)
     private String filename;
 
     @Column(nullable = false)
@@ -25,10 +35,10 @@ public class StorageFile {
     @Column(nullable = false)
     private Long size;
 
-    @Lob
     @Column(nullable = false)
     private byte[] fileContent;
 
-    @ManyToOne
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_username", nullable = false)
     private User user;
 }

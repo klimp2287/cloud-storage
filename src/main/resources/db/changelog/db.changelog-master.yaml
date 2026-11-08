@@ -3,13 +3,10 @@ databaseChangeLog:
       file: db/changelog/tables/users.sql
 
   - include:
-      file: db/changelog/tables/files.sql
-
-  - include:
-      file: db/changelog/tables/users_user_files.sql
-
-  - include:
       file: db/changelog/tables/insert_user_one.sql
 
   - include:
       file: db/changelog/tables/insert_user_two.sql
+
+  - include:
+      file: db/changelog/tables/files.sql

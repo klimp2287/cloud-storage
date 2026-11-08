@@ -12,7 +12,6 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configuration.WebSecurityConfigurerAdapter;
 import org.springframework.security.config.http.SessionCreationPolicy;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfiguration;
@@ -22,6 +21,7 @@ import ru.netology.jwt.JwtAuthenticationEntryPoint;
 import ru.netology.jwt.JwtRequestFilter;
 import ru.netology.service.UserService;
 
+import java.util.Arrays;
 import java.util.List;
 
 @Configuration
@@ -54,12 +54,17 @@ public class CloudStorageConfig extends WebSecurityConfigurerAdapter {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         final CorsConfiguration configuration = new CorsConfiguration();
+
         configuration.setAllowCredentials(credentials);
-        configuration.setAllowedOrigins(List.of(origins));
-        configuration.setAllowedMethods(List.of(methods));
-        configuration.setAllowedHeaders(List.of(headers));
-        final UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        configuration.setAllowedOrigins(Arrays.asList(origins.split(",")));
+        configuration.setAllowedMethods(Arrays.asList(methods.split(",")));
+        configuration.setAllowedHeaders(Arrays.asList(headers.split(",")));
+
+        final UrlBasedCorsConfigurationSource source =
+                new UrlBasedCorsConfigurationSource();
+
         source.registerCorsConfiguration("/**", configuration);
+
         return source;
     }
 
@@ -71,10 +76,7 @@ public class CloudStorageConfig extends WebSecurityConfigurerAdapter {
         auth.userDetailsService(userService).passwordEncoder(passwordEncoder);
     }
 
-    @Bean
-    public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder();
-    }
+
 
     @Bean
     @Override
@@ -84,6 +86,7 @@ public class CloudStorageConfig extends WebSecurityConfigurerAdapter {
 
     @Override
     protected void configure(HttpSecurity httpSecurity) throws Exception {
+        httpSecurity.logout().disable();
         httpSecurity.addFilterBefore(jwtRequestFilter, UsernamePasswordAuthenticationFilter.class);
         httpSecurity.cors();
         httpSecurity.authorizeRequests().antMatchers("/h2-console/**").permitAll();
@@ -93,8 +96,8 @@ public class CloudStorageConfig extends WebSecurityConfigurerAdapter {
         httpSecurity
                 .authorizeRequests()
                 .antMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-                .and()
-                .authorizeRequests().antMatchers("/login").permitAll();
+                .antMatchers("/login").permitAll()
+                .anyRequest().authenticated();
 
         httpSecurity
                 .exceptionHandling()

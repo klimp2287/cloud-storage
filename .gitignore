@@ -31,3 +31,9 @@ build/
 
 ### VS Code ###
 .vscode/
+
+### Local test files ###
+docker-test*.txt
+downloaded-*.txt
+test-upload.txt
+cloud_storage_backup.dump
