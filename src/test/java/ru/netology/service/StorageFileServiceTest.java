@@ -8,16 +8,10 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.PageRequest;
-import org.springframework.mock.web.MockMultipartFile;
-import ru.netology.dto.request.EditFileNameRQ;
-import ru.netology.dto.response.FileRS;
 import ru.netology.exception.InputDataException;
-import ru.netology.exception.UnauthorizedException;
 import ru.netology.model.StorageFile;
 import ru.netology.model.User;
-import ru.netology.repository.AuthenticationRepository;
 import ru.netology.repository.StorageFileRepository;
-import ru.netology.repository.UserRepository;
 
 import java.util.Collections;
 import java.util.List;
@@ -28,148 +22,234 @@ import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class StorageFileServiceTest {
-    private static final String TOKEN = "Bearer test-token";
-    private static final String USERNAME = "user@test.ru";
 
-    @Mock private StorageFileRepository storageFileRepository;
-    @Mock private AuthenticationRepository authenticationRepository;
-    @Mock private UserRepository userRepository;
-    @InjectMocks private StorageFileService storageFileService;
+    @Mock
+    private StorageFileRepository storageFileRepository;
+
+    @InjectMocks
+    private StorageFileService storageFileService;
 
     private User user;
 
     @BeforeEach
     void setUp() {
-        user = User.builder().username(USERNAME).password("encoded").build();
-    }
-
-    private void authenticateUser() {
-        when(authenticationRepository.getUsernameByToken("test-token")).thenReturn(USERNAME);
-        when(userRepository.findByUsername(USERNAME)).thenReturn(user);
+        user = User.builder()
+                .username("user@test.ru")
+                .password("encoded")
+                .build();
     }
 
     @Test
-    void uploadSavesFileForAuthenticatedUser() throws Exception {
-        authenticateUser();
-        MockMultipartFile multipartFile =
-                new MockMultipartFile("file", "hello.txt", "text/plain", "hello".getBytes());
+    void uploadSavesFileForUser() {
+        StorageFile file = new StorageFile(
+                null, "hello.txt", null, null, "hello".getBytes(), null
+        );
 
-        assertTrue(storageFileService.uploadFile(TOKEN, "hello.txt", multipartFile));
+        storageFileService.uploadFile(user, file);
 
-        ArgumentCaptor<StorageFile> captor = ArgumentCaptor.forClass(StorageFile.class);
+        ArgumentCaptor<StorageFile> captor =
+                ArgumentCaptor.forClass(StorageFile.class);
+
         verify(storageFileRepository).save(captor.capture());
-        assertEquals("hello.txt", captor.getValue().getFilename());
-        assertEquals(5L, captor.getValue().getSize());
-        assertArrayEquals("hello".getBytes(), captor.getValue().getFileContent());
-        assertSame(user, captor.getValue().getUser());
+
+        StorageFile savedFile = captor.getValue();
+
+        assertEquals("hello.txt", savedFile.getFilename());
+        assertEquals(5L, savedFile.getSize());
+        assertArrayEquals("hello".getBytes(), savedFile.getFileContent());
+        assertSame(user, savedFile.getUser());
+        assertNotNull(savedFile.getDate());
     }
 
     @Test
-    void uploadRejectsUnknownToken() {
-        when(authenticationRepository.getUsernameByToken("test-token")).thenReturn(null);
-        when(userRepository.findByUsername(null)).thenReturn(null);
-        MockMultipartFile file = new MockMultipartFile("file", "a.txt", "text/plain", new byte[]{1});
+    void uploadRejectsDuplicateFilename() {
+        StorageFile file = new StorageFile(
+                null, "hello.txt", null, null, "hello".getBytes(), null
+        );
 
-        assertThrows(UnauthorizedException.class,
-                () -> storageFileService.uploadFile(TOKEN, "a.txt", file));
+        when(storageFileRepository.existsByUserAndFilename(user, "hello.txt"))
+                .thenReturn(true);
+
+        assertThrows(
+                InputDataException.class,
+                () -> storageFileService.uploadFile(user, file)
+        );
+
         verify(storageFileRepository, never()).save(any());
     }
 
     @Test
-    void deleteRemovesFileOwnedByCurrentUser() {
-        authenticateUser();
-        when(storageFileRepository.deleteByUserAndFilename(user, "a.txt")).thenReturn(1L);
+    void uploadRejectsBlankFilename() {
+        StorageFile file = new StorageFile(
+                null, " ", null, null, new byte[]{1}, null
+        );
 
-        assertDoesNotThrow(() -> storageFileService.deleteFile(TOKEN, "a.txt"));
+        assertThrows(
+                InputDataException.class,
+                () -> storageFileService.uploadFile(user, file)
+        );
+
+        verify(storageFileRepository, never()).save(any());
+    }
+
+    @Test
+    void uploadRejectsNullFileContent() {
+        StorageFile file = new StorageFile(
+                null, "a.txt", null, null, null, null
+        );
+
+        assertThrows(
+                InputDataException.class,
+                () -> storageFileService.uploadFile(user, file)
+        );
+
+        verify(storageFileRepository, never()).save(any());
+    }
+
+    @Test
+    void deleteRemovesFileOwnedByUser() {
+        when(storageFileRepository.deleteByUserAndFilename(user, "a.txt"))
+                .thenReturn(1L);
+
+        assertDoesNotThrow(
+                () -> storageFileService.deleteFile(user, "a.txt")
+        );
 
         verify(storageFileRepository).deleteByUserAndFilename(user, "a.txt");
     }
 
     @Test
     void deleteThrowsWhenFileDoesNotExist() {
-        authenticateUser();
-        when(storageFileRepository.deleteByUserAndFilename(user, "missing.txt")).thenReturn(0L);
+        when(storageFileRepository.deleteByUserAndFilename(user, "missing.txt"))
+                .thenReturn(0L);
 
-        assertThrows(InputDataException.class,
-                () -> storageFileService.deleteFile(TOKEN, "missing.txt"));
+        assertThrows(
+                InputDataException.class,
+                () -> storageFileService.deleteFile(user, "missing.txt")
+        );
     }
 
     @Test
-    void downloadReturnsFileContent() {
-        authenticateUser();
-        byte[] content = "payload".getBytes();
-        StorageFile file = new StorageFile(1L, "a.txt", null, 7L, content, user);
-        when(storageFileRepository.findByUserAndFilename(user, "a.txt")).thenReturn(file);
+    void downloadReturnsStorageFile() {
+        StorageFile file = new StorageFile(
+                1L, "a.txt", null, 7L, "payload".getBytes(), user
+        );
 
-        assertArrayEquals(content, storageFileService.downloadFile(TOKEN, "a.txt"));
+        when(storageFileRepository.findByUserAndFilename(user, "a.txt"))
+                .thenReturn(file);
+
+        StorageFile result = storageFileService.downloadFile(user, "a.txt");
+
+        assertSame(file, result);
+        assertArrayEquals("payload".getBytes(), result.getFileContent());
     }
 
     @Test
     void downloadThrowsWhenFileDoesNotExist() {
-        authenticateUser();
-        when(storageFileRepository.findByUserAndFilename(user, "missing.txt")).thenReturn(null);
+        when(storageFileRepository.findByUserAndFilename(user, "missing.txt"))
+                .thenReturn(null);
 
-        assertThrows(InputDataException.class,
-                () -> storageFileService.downloadFile(TOKEN, "missing.txt"));
+        assertThrows(
+                InputDataException.class,
+                () -> storageFileService.downloadFile(user, "missing.txt")
+        );
     }
 
     @Test
-    void renameUpdatesFileName() {
-        authenticateUser();
-        EditFileNameRQ request = new EditFileNameRQ();
-        request.setFilename("new.txt");
-        when(storageFileRepository.editFileNameByUser(user, "old.txt", "new.txt")).thenReturn(1);
+    void renameUpdatesFilename() {
+        when(storageFileRepository.editFileNameByUser(
+                user, "old.txt", "new.txt"
+        )).thenReturn(1);
 
-        assertDoesNotThrow(() -> storageFileService.editFileName(TOKEN, "old.txt", request));
+        assertDoesNotThrow(
+                () -> storageFileService.editFileName(user, "old.txt", "new.txt")
+        );
 
-        verify(storageFileRepository).editFileNameByUser(user, "old.txt", "new.txt");
+        verify(storageFileRepository)
+                .editFileNameByUser(user, "old.txt", "new.txt");
     }
 
     @Test
     void renameThrowsWhenFileDoesNotExist() {
-        authenticateUser();
-        EditFileNameRQ request = new EditFileNameRQ();
-        request.setFilename("new.txt");
-        when(storageFileRepository.editFileNameByUser(user, "missing.txt", "new.txt")).thenReturn(0);
+        when(storageFileRepository.editFileNameByUser(
+                user, "missing.txt", "new.txt"
+        )).thenReturn(0);
 
-        assertThrows(InputDataException.class,
-                () -> storageFileService.editFileName(TOKEN, "missing.txt", request));
+        assertThrows(
+                InputDataException.class,
+                () -> storageFileService.editFileName(
+                        user, "missing.txt", "new.txt"
+                )
+        );
+    }
+
+    @Test
+    void renameRejectsDuplicateFilename() {
+        when(storageFileRepository.existsByUserAndFilename(user, "existing.txt"))
+                .thenReturn(true);
+
+        assertThrows(
+                InputDataException.class,
+                () -> storageFileService.editFileName(
+                        user, "old.txt", "existing.txt"
+                )
+        );
+
+        verify(storageFileRepository, never())
+                .editFileNameByUser(any(), anyString(), anyString());
+    }
+
+    @Test
+    void renameRejectsBlankFilename() {
+        assertThrows(
+                InputDataException.class,
+                () -> storageFileService.editFileName(user, "old.txt", " ")
+        );
+
+        verify(storageFileRepository, never())
+                .editFileNameByUser(any(), anyString(), anyString());
     }
 
     @Test
     void listReturnsFilesForUserAndUsesRequestedLimit() {
-        authenticateUser();
-        StorageFile file = new StorageFile(1L, "a.txt", null, 10L, new byte[10], user);
+        StorageFile file = new StorageFile(
+                1L, "a.txt", null, 10L, new byte[10], user
+        );
+
         when(storageFileRepository.findAllByUser(eq(user), any(PageRequest.class)))
                 .thenReturn(Collections.singletonList(file));
 
-        List<FileRS> result = storageFileService.getAllFiles(TOKEN, 10);
+        List<StorageFile> result = storageFileService.getAllFiles(user, 10);
 
         assertEquals(1, result.size());
-        assertEquals("a.txt", result.get(0).getFilename());
-        assertEquals(10L, result.get(0).getSize());
-        ArgumentCaptor<PageRequest> captor = ArgumentCaptor.forClass(PageRequest.class);
-        verify(storageFileRepository).findAllByUser(eq(user), captor.capture());
+        assertSame(file, result.get(0));
+
+        ArgumentCaptor<PageRequest> captor =
+                ArgumentCaptor.forClass(PageRequest.class);
+
+        verify(storageFileRepository)
+                .findAllByUser(eq(user), captor.capture());
+
         assertEquals(10, captor.getValue().getPageSize());
     }
 
     @Test
     void listRejectsZeroLimit() {
-        authenticateUser();
-        assertThrows(InputDataException.class, () -> storageFileService.getAllFiles(TOKEN, 0));
+        assertThrows(
+                InputDataException.class,
+                () -> storageFileService.getAllFiles(user, 0)
+        );
+
         verify(storageFileRepository, never()).findAllByUser(any(), any());
     }
 
     @Test
     void listRejectsNullLimit() {
-        authenticateUser();
-        assertThrows(InputDataException.class, () -> storageFileService.getAllFiles(TOKEN, null));
-        verify(storageFileRepository, never()).findAllByUser(any(), any());
-    }
+        assertThrows(
+                InputDataException.class,
+                () -> storageFileService.getAllFiles(user, null)
+        );
 
-    @Test
-    void operationsRejectMalformedAuthorizationHeader() {
-        assertThrows(UnauthorizedException.class,
-                () -> storageFileService.getAllFiles("invalid-token", 10));
+        verify(storageFileRepository, never()).findAllByUser(any(), any());
     }
 }

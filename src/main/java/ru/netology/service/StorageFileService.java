@@ -2,84 +2,55 @@ package ru.netology.service;
 
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
-import org.springframework.web.multipart.MultipartFile;
-import ru.netology.dto.request.EditFileNameRQ;
-import ru.netology.dto.response.FileRS;
 import ru.netology.exception.InputDataException;
-import ru.netology.exception.UnauthorizedException;
 import ru.netology.model.StorageFile;
 import ru.netology.model.User;
-import ru.netology.repository.AuthenticationRepository;
 import ru.netology.repository.StorageFileRepository;
-import ru.netology.repository.UserRepository;
 
 import javax.transaction.Transactional;
-import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.stream.Collectors;
-import org.springframework.data.domain.PageRequest;
 
 @Service
 @AllArgsConstructor
 @Slf4j
 public class StorageFileService {
 
-    private StorageFileRepository storageFileRepository;
-    private AuthenticationRepository authenticationRepository;
-    private UserRepository userRepository;
+    private final StorageFileRepository storageFileRepository;
 
-    public boolean uploadFile(String authToken, String filename, MultipartFile file) {
-        final User user = getUserByAuthToken(authToken);
-
+    public void uploadFile(User user, StorageFile file) {
         if (user == null) {
-            log.error("Upload file: Unauthorized");
-            throw new UnauthorizedException("Upload file: Unauthorized");
+            throw new InputDataException("User must not be null");
         }
 
-        if (filename == null || filename.isBlank()) {
+        if (file == null || file.getFilename() == null || file.getFilename().isBlank()) {
             throw new InputDataException("Filename must not be blank");
         }
 
-        if (file == null) {
-            throw new InputDataException("File must not be null");
+        if (file.getFileContent() == null) {
+            throw new InputDataException("File content must not be null");
         }
 
-        if (storageFileRepository.existsByUserAndFilename(user, filename)) {
+        if (storageFileRepository.existsByUserAndFilename(user, file.getFilename())) {
             log.error("Upload file: File already exists");
             throw new InputDataException("File already exists");
         }
 
-        try {
-            storageFileRepository.save(new StorageFile(
-                    null,
-                    filename,
-                    LocalDateTime.now(),
-                    file.getSize(),
-                    file.getBytes(),
-                    user
-            ));
+        file.setId(null);
+        file.setDate(LocalDateTime.now());
+        file.setSize((long) file.getFileContent().length);
+        file.setUser(user);
 
-            log.info("Success upload file. User {}", user.getUsername());
-            return true;
-        } catch (IOException e) {
-            log.error("Upload file: Input data exception");
-            throw new InputDataException("Upload file: Input data exception");
-        }
+        storageFileRepository.save(file);
+
+        log.info("Success upload file. User {}", user.getUsername());
     }
 
     @Transactional
-    public void deleteFile(String authToken, String filename) {
-        final User user = getUserByAuthToken(authToken);
-
-        if (user == null) {
-            log.error("Delete file: Unauthorized");
-            throw new UnauthorizedException("Delete file: Unauthorized");
-        }
-
-        final long deletedRows =
-                storageFileRepository.deleteByUserAndFilename(user, filename);
+    public void deleteFile(User user, String filename) {
+        long deletedRows = storageFileRepository.deleteByUserAndFilename(user, filename);
 
         if (deletedRows == 0) {
             log.error("Delete file: File not found");
@@ -89,41 +60,33 @@ public class StorageFileService {
         log.info("Success delete file. User {}", user.getUsername());
     }
 
-    public byte[] downloadFile(String authToken, String filename) {
-        final User user = getUserByAuthToken(authToken);
-        if (user == null) {
-            log.error("Download file: Unauthorized");
-            throw new UnauthorizedException("Download file: Unauthorized");
+    public StorageFile downloadFile(User user, String filename) {
+        StorageFile file = storageFileRepository.findByUserAndFilename(user, filename);
+
+        if (file == null) {
+            log.error("Download file: File not found");
+            throw new InputDataException("Download file: File not found");
         }
 
-        final StorageFile file = storageFileRepository.findByUserAndFilename(user, filename);
-        if (file == null) {
-            log.error("Download file: Input data exception");
-            throw new InputDataException("Download file: Input data exception");
-        }
         log.info("Success download file. User {}", user.getUsername());
-        return file.getFileContent();
+        return file;
     }
 
     @Transactional
-    public void editFileName(String authToken, String filename, EditFileNameRQ editFileNameRQ) {
-        final User user = getUserByAuthToken(authToken);
-
-        if (user == null) {
-            log.error("Edit file name: Unauthorized");
-            throw new UnauthorizedException("Edit file name: Unauthorized");
+    public void editFileName(User user, String filename, String newFilename) {
+        if (newFilename == null || newFilename.isBlank()) {
+            throw new InputDataException("Filename must not be blank");
         }
-        if (!filename.equals(editFileNameRQ.getFilename())
-                && storageFileRepository.existsByUserAndFilename(
-                user,
-                editFileNameRQ.getFilename())) {
+
+        if (!filename.equals(newFilename)
+                && storageFileRepository.existsByUserAndFilename(user, newFilename)) {
             throw new InputDataException("File with this name already exists");
         }
 
-        final int updatedRows = storageFileRepository.editFileNameByUser(
+        int updatedRows = storageFileRepository.editFileNameByUser(
                 user,
                 filename,
-                editFileNameRQ.getFilename()
+                newFilename
         );
 
         if (updatedRows == 0) {
@@ -134,32 +97,17 @@ public class StorageFileService {
         log.info("Success edit file name. User {}", user.getUsername());
     }
 
-    public List<FileRS> getAllFiles(String authToken, Integer limit) {
-        final User user = getUserByAuthToken(authToken);
-
-        if (user == null) {
-            log.error("Get all files: Unauthorized");
-            throw new UnauthorizedException("Get all files: Unauthorized");
-        }
-
+    public List<StorageFile> getAllFiles(User user, Integer limit) {
         if (limit == null || limit <= 0) {
             throw new InputDataException("Limit must be greater than zero");
         }
 
+        List<StorageFile> files = storageFileRepository.findAllByUser(
+                user,
+                PageRequest.of(0, limit)
+        );
+
         log.info("Success get all files. User {}", user.getUsername());
-
-        return storageFileRepository.findAllByUser(user, PageRequest.of(0, limit))
-                .stream()
-                .map(file -> new FileRS(file.getFilename(), file.getSize()))
-                .collect(Collectors.toList());
-    }
-
-    private User getUserByAuthToken(String authToken) {
-        if (authToken.startsWith("Bearer ")) {
-            final String authTokenWithoutBearer = authToken.split(" ")[1];
-            final String username = authenticationRepository.getUsernameByToken(authTokenWithoutBearer);
-            return userRepository.findByUsername(username);
-        }
-        return null;
+        return files;
     }
 }
